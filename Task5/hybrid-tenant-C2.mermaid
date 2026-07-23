@@ -1,0 +1,126 @@
+graph TB
+    subgraph "Presentation Layer"
+        WEB[Веб-приложение<br/>React + TypeScript]
+        MOB[Мобильное приложение<br/>Flutter]
+        DEV[Dev-портал<br/>React]
+    end
+    
+    subgraph "API Layer"
+        GW[API Gateway<br/>Kong]
+        AUTH[Auth Service<br/>Keycloak]
+        TENANT_ROUTER[Tenant Router Service<br/>FastAPI + Redis]
+    end
+    
+    subgraph "Core Services (Общие)"
+        FARM[Farm Service<br/>FastAPI]
+        EVENT[Event Service<br/>FastAPI]
+        ALERT[Alert Service<br/>FastAPI]
+        BILL[Billing Service<br/>FastAPI]
+        ANALYTICS[Analytics Service<br/>FastAPI + ClickHouse]
+    end
+    
+    subgraph "Standard Tenants Pool (Database-per-tenant)"
+        subgraph "PostgreSQL Cluster 1"
+            DB_A[(db_tenant_a<br/>Агрохолдинг 'Юг')]
+            DB_B[(db_tenant_b<br/>Агрохолдинг 'Север')]
+            DB_C[(db_tenant_c<br/>Агрохолдинг 'Восток')]
+            DB_D[(db_tenant_d<br/>...до 100 БД)]
+        end
+        
+        subgraph "PostgreSQL Cluster 2 (Шард)"
+            DB_E[(db_tenant_e)]
+            DB_F[(db_tenant_f)]
+            DB_G[(db_tenant_g)]
+            DB_H[(db_tenant_h<br/>...до 100 БД)]
+        end
+        
+        REDIS_STD[(Redis Cluster<br/>Общий кэш с tenant_id)]
+        S3_STD[(MinIO<br/>Общее хранилище с tenant_id)]
+    end
+    
+    subgraph "Premium Tenants Pool (Instance-per-tenant)"
+        subgraph "Tenant X - МегаХолдинг"
+            PG_X[(PostgreSQL X<br/>Выделенный инстанс)]
+            REDIS_X[(Redis X<br/>Выделенный)]
+            S3_X[(MinIO X<br/>Выделенный)]
+            SVCS_X[Services X<br/>Выделенные поды]
+        end
+        
+        subgraph "Tenant Y - АгроИмперия"
+            PG_Y[(PostgreSQL Y<br/>Выделенный инстанс)]
+            REDIS_Y[(Redis Y<br/>Выделенный)]
+            S3_Y[(MinIO Y<br/>Выделенный)]
+            SVCS_Y[Services Y<br/>Выделенные поды]
+        end
+    end
+    
+    subgraph "Shared Infrastructure"
+        DB_SHARED[(Shared DB<br/>users, tenants, plans, billing)]
+        CLICKHOUSE[(ClickHouse<br/>Агрегированная аналитика)]
+        KAFKA[Kafka Cluster<br/>События]
+    end
+    
+    WEB --> GW
+    MOB --> GW
+    DEV --> GW
+    
+    GW --> AUTH
+    GW --> TENANT_ROUTER
+    GW --> FARM
+    GW --> EVENT
+    GW --> ALERT
+    GW --> BILL
+    GW --> ANALYTICS
+    
+    TENANT_ROUTER -->|"Чтение маппинга tenant→DB"| DB_SHARED
+    TENANT_ROUTER -->|"Кэширование маршрутов"| REDIS_STD
+    
+    FARM -->|"Запрос к Tenant Router"| TENANT_ROUTER
+    EVENT --> TENANT_ROUTER
+    ALERT --> TENANT_ROUTER
+    
+    FARM -->|"Стандартные tenant'ы<br/>Подключение по tenant_id"| DB_A
+    FARM -->|"Стандартные tenant'ы<br/>Подключение по tenant_id"| DB_B
+    FARM -->|"Стандартные tenant'ы<br/>Подключение по tenant_id"| DB_C
+    FARM -->|"Стандартные tenant'ы<br/>Подключение по tenant_id"| DB_D
+    
+    FARM -->|"Premium tenant'ы<br/>Прямое подключение"| PG_X
+    FARM -->|"Premium tenant'ы<br/>Прямое подключение"| PG_Y
+    
+    EVENT --> DB_A
+    EVENT --> DB_B
+    EVENT --> DB_C
+    EVENT --> PG_X
+    EVENT --> PG_Y
+    
+    ALERT --> DB_A
+    ALERT --> DB_B
+    ALERT --> DB_C
+    ALERT --> PG_X
+    ALERT --> PG_Y
+    
+    BILL --> DB_SHARED
+    AUTH --> DB_SHARED
+    
+    ANALYTICS --> CLICKHOUSE
+    ANALYTICS --> DB_A
+    ANALYTICS --> DB_B
+    ANALYTICS --> DB_C
+    ANALYTICS --> PG_X
+    ANALYTICS --> PG_Y
+    
+    FARM -->|"Кэш: tenant_id:key"| REDIS_STD
+    EVENT --> REDIS_STD
+    ALERT --> REDIS_STD
+    FARM -->|"Premium: прямой доступ"| REDIS_X
+    FARM -->|"Premium: прямой доступ"| REDIS_Y
+    
+    FARM --> S3_STD
+    EVENT --> S3_STD
+    FARM -->|"Premium: выделенное хранилище"| S3_X
+    FARM -->|"Premium: выделенное хранилище"| S3_Y
+    
+    FARM --> KAFKA
+    EVENT --> KAFKA
+    ALERT --> KAFKA
+    ANALYTICS --> KAFKA

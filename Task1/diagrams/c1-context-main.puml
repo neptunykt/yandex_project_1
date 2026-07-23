@@ -1,0 +1,29 @@
+@startuml
+!include C4_Context.puml
+title Контекстная диаграмма (C1) - Агро-ИТ система для MVP
+
+Person(agronomist, "Агроном", "Работает в поле")
+Person(mechanic, "Механик", "Мониторит технику")
+Person(director, "Директор", "Управляет хозяйством")
+Person(analyst, "Аналитик", "Анализирует эффективность")
+
+System_Boundary(agro, "Агро-ИТ система") {
+    System(core, "Агро-ИТ система", "Сбор данных, аналитика, управление")
+}
+
+System_Ext(erp, "ERP (LC Агро)", "Финансы, склад")
+System_Ext(iot, "IoT-устройства", "Датчики, трекеры")
+System_Ext(bi, "Power BI", "Визуализация")
+System_Ext(scada, "SCADA (Ignition)", "Управление теплицами")
+
+Rel(agronomist, core, "Мобильное приложение")
+Rel(mechanic, core, "Веб-портал")
+Rel(director, core, "Веб-портал")
+Rel(analyst, bi, "Анализ данных")
+
+Rel(core, erp, "Синхронизация", "REST API")
+Rel(iot, core, "Данные с датчиков", "LoRaWAN, 4G")
+Rel(core, bi, "Отчеты", "ODBC")
+Rel(core, scada, "Климат-данные", "OPC UA")
+
+@enduml
