@@ -1,0 +1,194 @@
+classDiagram
+    class EdgeAgent {
+        -config: EdgeConfig
+        -camera_manager: CameraManager
+        -device_manager: DeviceManager
+        -sync_queue: AsyncQueue
+        -mqtt_client: MQTTClient
+        +start()
+        +stop()
+        +collect_data()
+        +send_video()
+        +receive_command()
+    }
+    
+    class CameraManager {
+        -cameras: List[IPCamera]
+        -rtsp_handlers: Dict
+        -frame_buffer: CircularBuffer
+        +add_camera(camera: IPCamera)
+        +remove_camera(id: str)
+        +capture_frame(camera_id: str)
+        +stream_video(camera_id: str, quality: int)
+        +compress_frame(frame: Frame, quality: int)
+    }
+    
+    class DeviceManager {
+        -devices: List[IoTDevice]
+        -protocols: Dict[str, ProtocolHandler]
+        +scan_devices()
+        +connect_device(device: IoTDevice)
+        +send_command(device_id: str, command: Command)
+        +read_telemetry(device_id: str)
+        +disconnect_device(device_id: str)
+    }
+    
+    class VideoStreamService {
+        -stream_manager: StreamManager
+        -frame_processor: FrameProcessor
+        -s3_uploader: S3Uploader
+        +receive_stream(camera_id: str, stream: RTSPSource)
+        +process_frame(camera_id: str, frame: Frame)
+        +archive_video(camera_id: str, video: VideoSegment)
+        +get_live_stream(camera_id: str)
+    }
+    
+    class NeuralNetwork {
+        -model: PyTorchModel
+        -device: torch.device
+        -classes: List[str]
+        +load_model(path: str)
+        +predict(frame: Tensor)
+        +detect_anomaly(frame: Tensor)
+        +detect_fight(frame: Tensor)
+        +detect_disease(frame: Tensor)
+    }
+    
+    class EventDetector {
+        -detector_config: DetectorConfig
+        -event_matcher: EventMatcher
+        -filter: EventFilter
+        +detect_events(frames: List[Frame])
+        +match_events(events: List[Event])
+        +filter_false_positives(events: List[Event])
+        +publish_events(events: List[Event])
+    }
+    
+    class FarmManagementService {
+        -farm_repository: FarmRepository
+        -equipment_repository: EquipmentRepository
+        -schedule_repository: ScheduleRepository
+        +create_farm(farm: Farm)
+        +update_farm(id: str, data: FarmUpdate)
+        +get_farm(id: str)
+        +list_farms(user_id: str)
+        +create_schedule(farm_id: str, schedule: Schedule)
+        +execute_schedule(schedule: Schedule)
+    }
+    
+    class AlertingService {
+        -alert_repository: AlertRepository
+        -notification_senders: List[NotificationSender]
+        -alert_rules: List[AlertRule]
+        +receive_event(event: Event)
+        +process_alert(alert: Alert)
+        +send_notification(notification: Notification)
+        +get_alerts(farm_id: str, time_range: TimeRange)
+        +acknowledge_alert(alert_id: str)
+    }
+    
+    class ControlService {
+        -command_sender: CommandSender
+        -command_queue: CommandQueue
+        +send_command(farm_id: str, device_id: str, command: Command)
+        +schedule_command(command: ScheduledCommand)
+        +cancel_command(command_id: str)
+        +get_command_status(command_id: str)
+    }
+    
+    class SyncService {
+        -sync_repository: SyncRepository
+        -data_merger: DataMerger
+        +sync_data(farm_id: str)
+        +merge_data(data: FarmData)
+        +resolve_conflicts(conflicts: List[Conflict])
+        +get_pending_sync(farm_id: str)
+    }
+    
+    class MetricsService {
+        -metrics_repository: MetricsRepository
+        -aggregator: MetricsAggregator
+        +calculate_livestock_count(farm_id: str)
+        +calculate_feed_consumption(farm_id: str, time_range: TimeRange)
+        +predict_feed_need(farm_id: str)
+        +get_farm_health(farm_id: str)
+    }
+    
+    class Event {
+        +id: UUID
+        +type: EventType
+        +farm_id: UUID
+        +camera_id: str
+        +timestamp: datetime
+        +severity: Severity
+        +data: Dict
+        +acknowledged: bool
+        +to_event()
+    }
+    
+    class Alert {
+        +id: UUID
+        +event_id: UUID
+        +message: str
+        +recipients: List[str]
+        +status: AlertStatus
+        +sent_at: datetime
+        +acknowledged_at: datetime
+        +to_notification()
+    }
+    
+    class Farm {
+        +id: UUID
+        +name: str
+        +location: Location
+        +owner_id: UUID
+        +devices: List[Device]
+        +cameras: List[Camera]
+        +livestock_count: int
+        +created_at: datetime
+        +updated_at: datetime
+    }
+    
+    EdgeAgent *-- CameraManager
+    EdgeAgent *-- DeviceManager
+    VideoStreamService --> NeuralNetwork
+    VideoStreamService --> EventDetector
+    EventDetector --> Event
+    EventDetector ..> NeuralNetwork
+    AlertingService --> Event
+    AlertingService --> Alert
+    ControlService --> Farm
+    FarmManagementService --> Farm
+    FarmManagementService ..> ControlService
+    SyncService --> Farm
+    MetricsService --> Farm
+    AlertingService ..> MetricsService
+    
+    class Gateway {
+        -route_matcher: RouteMatcher
+        -auth_middleware: AuthMiddleware
+        -rate_limiter: RateLimiter
+        +handle_request(request: Request)
+        +authenticate(token: str)
+        +authorize(user: User, resource: str)
+        +route(request: Request)
+    }
+    
+    class KeycloakClient {
+        -base_url: str
+        -realm: str
+        -client_id: str
+        -client_secret: str
+        +authenticate(credentials: Credentials)
+        +validate_token(token: str)
+        +get_user_info(token: str)
+        +refresh_token(refresh_token: str)
+    }
+    
+    Gateway --> KeycloakClient
+    Gateway ..> VideoStreamService
+    Gateway ..> FarmManagementService
+    Gateway ..> AlertingService
+    Gateway ..> ControlService
+    Gateway ..> SyncService
+    Gateway ..> MetricsService

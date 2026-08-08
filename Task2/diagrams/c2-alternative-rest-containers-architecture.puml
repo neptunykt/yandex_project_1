@@ -1,0 +1,103 @@
+@startuml c2_farm_hybrid_microservices
+!include C4_Container.puml
+
+title Контейнерная диаграмма C2 - Вариант 2: Микросервисная архитектура с синхронными вызовами
+
+' --- Пользователи ---
+Person(worker, "Дежурный на ферме", "Получает локальные оповещения")
+Person(vet, "Ветеринар", "Мониторит алерты")
+Person(manager, "Руководитель", "Анализирует отчеты")
+Person(mobile, "Мобильный оператор", "Получает push-уведомления")
+
+' --- Edge Layer ---
+System_Boundary(edge, "Edge Layer - Свиноводческая ферма") {
+    
+    Container(edge_gateway, "Edge Gateway", "Python + FastAPI", "Единая точка входа на Edge")
+    
+    Container(vas, "Video Analytics Service", "Python + TensorRT", "Локальная видеоаналитика")
+    Container(ems, "Edge Management Service", "Python", "Управление периферией")
+    Container(ctrl, "Local Controller", "Python", "Контроль кормушек и поилок")
+    
+    ContainerDb(timescale, "TimescaleDB", "База данных", "Хранение метаданных")
+    ContainerDb(redis_edge, "Redis Edge Cache", "Кэш", "Локальное кэширование")
+    Container(local_storage, "Local Storage", "Файловое хранилище", "Архив видео")
+    
+    Container(sync_agent, "Sync Agent", "Python", "Синхронизация с облаком")
+    Container(ws_server, "WebSocket Server", "Python", "Локальные оповещения")
+}
+
+' --- Cloud Layer ---
+System_Boundary(cloud, "Cloud Layer - Головной офис") {
+    
+    Container(gw, "API Gateway", "Kong", "Маршрутизация и аутентификация")
+    Container(auth, "Keycloak", "OAuth2/OIDC", "Аутентификация")
+    
+    Container(agg, "Aggregation Service", "FastAPI", "Агрегация данных")
+    Container(analytics, "Analytics Service", "FastAPI + Airflow", "Аналитика")
+    Container(alerting, "Alerting Service", "FastAPI", "Оповещения")
+    Container(users, "User Management", "FastAPI", "Управление пользователями")
+    Container(reporting, "Reporting Service", "FastAPI", "Отчеты")
+    
+    ContainerDb(clickhouse, "ClickHouse", "Колоночная БД", "Долгосрочное хранение")
+    ContainerDb(postgres, "PostgreSQL", "Реляционная БД", "Пользователи и фермы")
+    ContainerDb(minio, "MinIO/S3", "Объектное хранилище", "Архив видео")
+    ContainerDb(redis_cloud, "Redis Cloud Cache", "Кэш", "Кэширование")
+}
+
+' --- Клиенты ---
+Container(web, "React Web App", "React", "Веб-портал")
+Container(mobile, "Flutter Mobile App", "Flutter", "Мобильное приложение")
+System_Ext(erp, "ERP/BI Systems", "Внешние системы")
+
+' --- Edge связи ---
+Rel(edge_gateway, vas, "Видеоаналитика", "REST")
+Rel(edge_gateway, ems, "Управление", "REST")
+Rel(edge_gateway, ctrl, "Команды", "REST")
+
+Rel(vas, local_storage, "Видео", "Файловая система")
+Rel(vas, timescale, "Метрики", "SQL")
+Rel(ems, timescale, "Данные", "SQL")
+Rel(ems, redis_edge, "Кэш", "Redis")
+Rel(ctrl, edge_gateway, "Статус", "REST")
+
+Rel(edge_gateway, ws_server, "Оповещения", "WebSocket")
+Rel(timescale, sync_agent, "Репликация", "SQL")
+
+' --- Edge -> Cloud ---
+Rel(sync_agent, gw, "Синхронизация", "HTTPS/REST")
+Rel(sync_agent, minio, "Видео", "HTTPS/S3")
+
+' --- Cloud Internal ---
+Rel(gw, auth, "Аутентификация", "OAuth2")
+
+Rel(gw, agg, "Запросы", "REST")
+Rel(gw, alerting, "Запросы", "REST")
+Rel(gw, users, "Запросы", "REST")
+Rel(gw, reporting, "Запросы", "REST")
+Rel(gw, analytics, "Запросы", "REST")
+
+Rel(agg, analytics, "Данные", "REST")
+Rel(alerting, agg, "Данные", "REST")
+Rel(reporting, analytics, "Данные", "REST")
+
+Rel(agg, clickhouse, "Запись", "SQL")
+Rel(analytics, clickhouse, "Чтение", "SQL")
+Rel(alerting, clickhouse, "История", "SQL")
+Rel(reporting, clickhouse, "Отчеты", "SQL")
+Rel(users, postgres, "CRUD", "SQL")
+Rel(agg, redis_cloud, "Кэш", "Redis")
+
+' --- Cloud -> Edge ---
+Rel(gw, sync_agent, "Обновления", "HTTPS/REST")
+
+' --- Клиенты ---
+Rel(web, gw, "Запросы", "HTTPS")
+Rel(mobile, gw, "Запросы", "HTTPS")
+Rel(alerting, web, "Уведомления", "WebSocket")
+Rel(alerting, mobile, "Push", "FCM/APNS")
+
+' --- Внешние ---
+Rel(erp, gw, "Интеграция", "REST")
+
+SHOW_LEGEND()
+@enduml

@@ -1,0 +1,142 @@
+graph TB
+    subgraph "Edge Layer - Ферма"
+        subgraph "Edge Equipment"
+            CAM["IP Камеры (RTSP/ONVIF)"]
+            FEED["Кормушки/Поилки (Modbus/MQTT)"]
+            SENS["Датчики (Фильтрация/Корм)"]
+        end
+        
+        subgraph "Edge Services"
+            VAS["Video Analytics Service (TensorRT + Python)"]
+            EMS["Edge Management Service (Rust/Python)"]
+            CTRL["Local Controller (Rust)"]
+            BROKER["EMQX (MQTT Broker)"]
+            DB[("TimescaleDB (Метаданные)")]
+            CACHE[("Redis Edge Cache")]
+            LSTOR["Local Storage (Видеоархив)"]
+        end
+        
+        subgraph "Edge Connectivity"
+            SYNC["Sync Agent (Rust)"]
+            WS["WebSocket Server"]
+        end
+    end
+    
+    subgraph "Cloud Platform"
+        subgraph "Ingress"
+            GW["API Gateway (Kong)"]
+            KC["Kafka Cluster (Синхронизация)"]
+        end
+        
+        subgraph "Cloud Services"
+            AGG["Aggregation Service (FastAPI)"]
+            ANL["Analytics Service (FastAPI + Airflow)"]
+            ALRT["Alerting Service (FastAPI)"]
+            USR["User Management (FastAPI)"]
+            REP["Reporting Service (FastAPI)"]
+        end
+        
+        subgraph "Cloud Storage"
+            CH[("ClickHouse (5+ лет данных)")]
+            PGS[("PostgreSQL (Пользователи/Фермы)")]
+            S3[("MinIO/S3 (Архив видео)")]
+            CACHE2[("Redis Cloud Cache")]
+        end
+        
+        subgraph "Authentication"
+            AUTH2["Keycloak (OAuth2/OIDC)"]
+        end
+    end
+    
+    subgraph "Clients"
+        WEB2["React Web App"]
+        MOB2["Flutter Mobile App"]
+        EXT2["ERP/BI Systems (ODBC/JDBC)"]
+    end
+    
+    %% Связи внутри Edge
+    CAM -->|RTSP| VAS
+    VAS -->|Детекции| BROKER
+    VAS -->|Фрагменты видео| LSTOR
+    VAS -->|Логи/События| DB
+    FEED -->|Telemetry| BROKER
+    SENS -->|Telemetry| BROKER
+    BROKER -->|События| EMS
+    BROKER -->|Команды| FEED
+    BROKER -->|Данные| DB
+    EMS -->|Управление| CTRL
+    CTRL -->|Modbus| FEED
+    
+    DB -->|Репликация метрик| SYNC
+    CACHE -->|Кэш| EMS
+    WS -->|Локальные оповещения| BROKER
+    
+    %% Связи Edge -> Cloud
+    SYNC -->|HTTPS/Protobuf| GW
+    LSTOR -->|Бинарные файлы| GW
+    
+    %% Внутри Облака от GW
+    GW -->|Стриминг метрик| KC
+    GW -->|Медиафайлы| S3
+    KC -->|Потоки данных| AGG
+    KC -->|События| ALRT
+    KC -->|Метрики| ANL
+    
+    GW -->|Аутентификация| AUTH2
+    GW -->|/api/v1/farms| AGG
+    GW -->|/api/v1/alerts| ALRT
+    GW -->|/api/v1/users| USR
+    GW -->|/api/v1/reports| REP
+    GW -->|/api/v1/analytics| ANL
+    
+    AGG -->|Агрегация| CH
+    ANL -->|Анализ| CH
+    USR -->|CRUD| PGS
+    REP -->|Отчеты| CH
+    REP -->|Экспорт| S3
+    
+    AGG -->|Кэш| CACHE2
+    ANL -->|Кэш| CACHE2
+    ALRT -->|История| CH
+    
+    %% Связи Клиентов
+    WEB2 -->|Запросы / API| GW
+    MOB2 -->|Запросы / API| GW
+    ALRT -->|Push/WebSockets| GW
+    GW -.->|Push-уведомления| MOB2
+    GW -.->|WebSockets| WEB2
+    
+    AUTH2 -->|JWT| WEB2
+    AUTH2 -->|JWT| MOB2
+    EXT2 -->|ODBC| CH
+    EXT2 -->|REST| GW
+    
+    %% Стилизация
+    style CAM fill:#f9f,stroke:#333,stroke-width:2px
+    style FEED fill:#f9f,stroke:#333,stroke-width:2px
+    style SENS fill:#f9f,stroke:#333,stroke-width:2px
+    style VAS fill:#f96,stroke:#333,stroke-width:2px
+    style EMS fill:#f96,stroke:#333,stroke-width:2px
+    style CTRL fill:#f96,stroke:#333,stroke-width:2px
+    style BROKER fill:#f96,stroke:#333,stroke-width:2px
+    style DB fill:#9f9,stroke:#333,stroke-width:2px
+    style LSTOR fill:#9f9,stroke:#333,stroke-width:2px
+    style CACHE fill:#9f9,stroke:#333,stroke-width:2px
+    style SYNC fill:#f96,stroke:#333,stroke-width:2px
+    style WS fill:#f96,stroke:#333,stroke-width:2px
+    
+    style GW fill:#bbf,stroke:#333,stroke-width:2px
+    style KC fill:#bbf,stroke:#333,stroke-width:2px
+    style AGG fill:#bbf,stroke:#333,stroke-width:2px
+    style ANL fill:#bbf,stroke:#333,stroke-width:2px
+    style ALRT fill:#bbf,stroke:#333,stroke-width:2px
+    style USR fill:#bbf,stroke:#333,stroke-width:2px
+    style REP fill:#bbf,stroke:#333,stroke-width:2px
+    style CH fill:#9f9,stroke:#333,stroke-width:2px
+    style PGS fill:#9f9,stroke:#333,stroke-width:2px
+    style S3 fill:#9f9,stroke:#333,stroke-width:2px
+    style CACHE2 fill:#9f9,stroke:#333,stroke-width:2px
+    style AUTH2 fill:#fc9,stroke:#333,stroke-width:2px
+    style WEB2 fill:#cf9,stroke:#333,stroke-width:2px
+    style MOB2 fill:#cf9,stroke:#333,stroke-width:2px
+    style EXT2 fill:#cf9,stroke:#333,stroke-width:2px

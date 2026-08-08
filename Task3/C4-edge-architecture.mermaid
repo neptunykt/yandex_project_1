@@ -1,0 +1,197 @@
+classDiagram
+    class EdgeSystem {
+        -video_analytics: VideoAnalyticsService
+        -local_controller: LocalController
+        -edge_manager: EdgeManager
+        -sync_agent: SyncAgent
+        -mqtt_broker: EMQXClient
+        +initialize()
+        +start_services()
+        +health_check()
+        +stop()
+        +restart_service(service: ServiceType)
+    }
+    
+    class VideoAnalyticsService {
+        -tensorrt_model: TRTModel
+        -frame_pipeline: FramePipeline
+        -detector: AnomalyDetector
+        -local_storage: TimescaleDBClient
+        +process_stream(camera_id: str, stream: RTSPSource)
+        +detect_anomaly(frame: Frame)
+        +publish_event(event: Event)
+        +store_metadata(metadata: Metadata)
+        +get_last_events(camera_id: str)
+    }
+    
+    class LocalController {
+        -modbus_client: ModbusClient
+        -device_registry: DeviceRegistry
+        -command_executor: CommandExecutor
+        +send_modbus_command(device_id: str, command: ModbusCommand)
+        +read_sensors(device_id: str)
+        +execute_schedule(schedule: Schedule)
+        +set_feed_amount(device_id: str, amount: float)
+        +emergency_stop(device_id: str)
+    }
+    
+    class EdgeManager {
+        -service_registry: ServiceRegistry
+        -config_manager: ConfigManager
+        -health_monitor: HealthMonitor
+        -update_manager: UpdateManager
+        +register_service(service: Service)
+        +update_config(config: EdgeConfig)
+        +monitor_health()
+        +apply_update(update: UpdatePackage)
+        +rollback(version: str)
+    }
+    
+    class SyncAgent {
+        -kafka_producer: KafkaProducer
+        -sync_buffer: SyncBuffer
+        -data_serializer: ProtobufSerializer
+        -connection_monitor: ConnectionMonitor
+        +sync_data(data: FarmData)
+        +buffer_data(data: FarmData)
+        +send_to_cloud(data: SyncData)
+        +resync_on_reconnect()
+        +check_connection()
+    }
+    
+    class TimescaleDBClient {
+        -connection_pool: Pool
+        -time_series_inserter: TimeSeriesInserter
+        -query_builder: QueryBuilder
+        +insert_sensor_data(data: SensorData)
+        +insert_event(event: Event)
+        +query_time_range(table: str, start: datetime, end: datetime)
+        +aggregate_by_time(table: str, interval: str)
+        +get_latest_data(table: str, limit: int)
+    }
+    
+    class EMQXClient {
+        -mqtt_connection: MQTTConnection
+        -subscription_manager: SubscriptionManager
+        -message_router: MessageRouter
+        +publish(topic: str, message: MQTTMessage)
+        +subscribe(topic: str, callback: Callable)
+        +unsubscribe(topic: str)
+        +route_message(message: MQTTMessage)
+        +setup_retained_messages()
+    }
+    
+    class SyncData {
+        +farm_id: UUID
+        +timestamp: datetime
+        +events: List[Event]
+        +sensor_data: List[SensorReading]
+        +livestock_data: LivestockData
+        +status: SyncStatus
+        +metadata: Dict
+        +serialize()
+        +deserialize(data: bytes)
+    }
+    
+    class FarmData {
+        +farm_id: UUID
+        +device_readings: List[DeviceReading]
+        +events: List[Event]
+        +alerts: List[Alert]
+        +livestock_count: int
+        +feed_level: float
+        +water_quality: WaterQuality
+        +filter_status: FilterStatus
+        +to_sync_data()
+    }
+    
+    class KafkaCluster {
+        -brokers: List[Broker]
+        -topics: Dict[str, Topic]
+        -consumer_groups: List[ConsumerGroup]
+        +produce(topic: str, key: str, message: Message)
+        +consume(topic: str, group: str)
+        +create_topic(topic: str, partitions: int)
+        +check_health()
+    }
+    
+    class AnalyticsService {
+        -clickhouse_client: ClickHouseClient
+        -data_aggregator: Aggregator
+        -ml_predictor: MLPredictor
+        +aggregate_farm_data(farm_id: str, time_range: TimeRange)
+        +predict_health_risks(farm_id: str)
+        +analyze_feeds(farm_id: str)
+        +generate_report(farm_id: str, report_type: ReportType)
+    }
+    
+    EdgeSystem *-- VideoAnalyticsService
+    EdgeSystem *-- LocalController
+    EdgeSystem *-- EdgeManager
+    EdgeSystem *-- SyncAgent
+    EdgeSystem *-- EMQXClient
+    
+    SyncAgent --> SyncData
+    VideoAnalyticsService --> FarmData
+    LocalController --> FarmData
+    
+    SyncData ..> TimescaleDBClient
+    FarmData ..> TimescaleDBClient
+    
+    SyncAgent --> KafkaCluster
+    KafkaCluster --> SyncData
+    
+    class CloudService {
+        -aggregation: AggregationService
+        -analytics: AnalyticsService
+        -alerting: AlertService
+        -user_mgmt: UserManagementService
+        +process_sync_data(data: SyncData)
+        +handle_request(request: CloudRequest)
+    }
+    
+    class AggregationService {
+        -clickhouse: ClickHouseClient
+        -cache: RedisClient
+        -aggregator: Aggregator
+        +aggregate_data(farm_id: str, time_range: TimeRange)
+        +calculate_metrics(farm_id: str)
+        +get_farm_status(farm_id: str)
+        +update_dashboard_data()
+    }
+    
+    class AlertService {
+        -alert_rules: List[AlertRule]
+        -notification_senders: List[NotificationSender]
+        -clickhouse: ClickHouseClient
+        +process_event(event: Event)
+        +check_rules(event: Event)
+        +send_notification(alert: Alert)
+        +escalate_alert(alert: Alert)
+        +get_alert_history(farm_id: str)
+    }
+    
+    class UserManagementService {
+        -postgres: PostgresClient
+        -keycloak: KeycloakClient
+        -cache: RedisClient
+        +create_user(user: User)
+        +authenticate_user(credentials: Credentials)
+        +authorize_user(user: User, resource: str, action: str)
+        +assign_farm(user_id: str, farm_id: str)
+        +get_user_permissions(user_id: str)
+    }
+    
+    CloudService *-- AggregationService
+    CloudService *-- AnalyticsService
+    CloudService *-- AlertService
+    CloudService *-- UserManagementService
+    
+    AlertService --> FarmData
+    AggregationService --> FarmData
+    AnalyticsService --> FarmData
+    
+    UserManagementService ..> CloudService
+    AggregationService ..> CloudService
+    AnalyticsService ..> CloudService
+    AlertService ..> CloudService

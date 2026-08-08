@@ -1,0 +1,49 @@
+@startuml c1_farm_hybrid_detailed
+!include C4_Context.puml
+
+title Контекстная диаграмма C1 - Гибридная архитектура с детальным Edge-агентом
+
+Person(worker, "Дежурный на ферме", "Получает локальные оповещения и контролирует ситуацию на месте")
+Person(vet, "Ветеринар и Оператор", "Мониторит алерты и состояние поголовья через веб-интерфейс")
+Person(manager, "Руководитель хозяйства", "Управляет хозяйством и анализирует сводные отчеты")
+Person(mobile_worker, "Мобильный оператор", "Получает push уведомления и просматривает статус через мобильное приложение")
+
+System_Boundary(farm, "Edge Layer - Свиноводческая ферма") {
+    System(edge_agent, "Интеллектуальный Edge агент", "Видеоаналитика на TensorRT, управление периферией на Modbus и MQTT, локальное хранение, синхронизация с облаком")
+    System_Ext(cameras, "IP камеры", "Видеопоток по RTSP и ONVIF")
+    System_Ext(feeders, "Кормушки и поилки", "Управление через Modbus и MQTT")
+    System_Ext(sensors, "Датчики", "Фильтрация и контроль корма")
+}
+
+System_Boundary(hq, "Cloud Platform - Головной офис") {
+    System(cloud_service, "Центральные сервисы платформы", "API Gateway, сервисы агрегации и аналитики, оповещения, управление пользователями, отчеты, долгосрочное хранение на ClickHouse")
+}
+
+System_Ext(erp, "ERP и BI Systems", "Бизнес-аналитика, финансовый учет, управление складом через ODBC, JDBC и REST")
+
+Rel(worker, edge_agent, "Получает локальное оповещение", "WebSocket")
+Rel(cameras, edge_agent, "Видеопоток", "RTSP и ONVIF")
+Rel(sensors, edge_agent, "Телеметрия датчиков", "MQTT")
+Rel(feeders, edge_agent, "Телеметрия и управление", "Modbus и MQTT")
+Rel(edge_agent, feeders, "Команды управления", "Modbus")
+
+Rel(edge_agent, cloud_service, "Асинхронная передача событий, метрик и видео", "HTTPS, Protobuf и Kafka")
+Rel(cloud_service, edge_agent, "Доставка обновлений моделей и команд", "HTTPS и Protobuf")
+
+Rel(vet, cloud_service, "Просматривает алерты и видеофрагменты", "HTTPS")
+Rel(manager, cloud_service, "Анализирует сводные отчеты", "HTTPS")
+Rel(mobile_worker, cloud_service, "Получает push уведомления и просматривает статус", "HTTPS и Push")
+
+Rel(cloud_service, erp, "Экспорт данных и отчетов", "REST API и ODBC")
+
+note right of edge_agent
+  КЛЮЧЕВЫЕ ОСОБЕННОСТИ
+  - Видеоаналитика выполняется локально на Edge
+  - Локальное управление периферией менее 5 секунд
+  - Асинхронная синхронизация с облаком
+  - ClickHouse для долгосрочного хранения до 5 лет
+  - Kafka для стриминга метрик
+end note
+
+SHOW_LEGEND()
+@enduml

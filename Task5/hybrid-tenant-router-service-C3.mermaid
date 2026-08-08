@@ -1,0 +1,60 @@
+graph TB
+    subgraph "Tenant Router Service (FastAPI)"
+        API[API Controller<br/>/api/tenant/route<br/>/api/tenant/metadata]
+        
+        subgraph "Tenant Metadata Management"
+            METADATA[Tenant Metadata Manager]
+            CACHE[Cache Manager]
+            STRATEGY[Strategy Resolver<br/>standard AND premium]
+        end
+        
+        subgraph "Connection Pool Management"
+            STD_POOL[Standard Connection Pool<br/>Database-per-tenant]
+            PREMIUM_POOL[Premium Connection Pool<br/>Instance-per-tenant]
+        end
+        
+        subgraph "Routing Logic"
+            ROUTER[Request Router<br/>Определение БД для tenant'а]
+            LOAD_BALANCER[Load Balancer<br/>Распределение по кластерам]
+        end
+    end
+    
+    subgraph "Data Stores"
+        META_DB[(Shared PostgreSQL<br/>tenant_metadata)]
+        REDIS_CACHE[(Redis<br/>Кэш маршрутов)]
+    end
+    
+    subgraph "Target Databases"
+        subgraph "Standard Clusters"
+            CLUSTER1[(Cluster 1<br/>db_tenant_a..db_tenant_n)]
+            CLUSTER2[(Cluster 2<br/>db_tenant_n+1..db_tenant_m)]
+        end
+        
+        subgraph "Premium Instances"
+            PREM1[(Premium Instance 1<br/>МегаХолдинг)]
+            PREM2[(Premium Instance 2<br/>АгроИмперия)]
+            PREM3[(Premium Instance 3<br/>...)]
+        end
+    end
+    
+    API --> METADATA
+    METADATA -->|"Запрос стратегии"| STRATEGY
+    METADATA -->|"Чтение метаданных"| META_DB
+    METADATA -->|"Кэширование"| CACHE
+    CACHE --> REDIS_CACHE
+    
+    STRATEGY -->|"standard"| STD_POOL
+    STRATEGY -->|"premium"| PREMIUM_POOL
+    
+    STD_POOL --> ROUTER
+    PREMIUM_POOL --> ROUTER
+    
+    ROUTER --> LOAD_BALANCER
+    
+    LOAD_BALANCER -->|"Шардирование по tenant_id<br/>hash(tenant_id) % 2"| CLUSTER1
+    LOAD_BALANCER -->|"Шардирование по tenant_id<br/>hash(tenant_id) % 2"| CLUSTER2
+    
+    LOAD_BALANCER -->|"Прямой маршрут"| PREM1
+    LOAD_BALANCER -->|"Прямой маршрут"| PREM2
+    LOAD_BALANCER -->|"Прямой маршрут"| PREM3
+    

@@ -1,0 +1,99 @@
+graph TB
+    subgraph "External Systems"
+        CLIENT[Клиенты SaaS<br/>AgroHolding 1..N]
+        OPERATORS[Операторы ферм]
+        PAYMENT[Платежные системы<br/>YooKassa/SberPay]
+        EXTERNAL[Внешние системы<br/>ERP/BI/1C]
+    end
+    
+    subgraph "Smart Pig Farming SaaS Platform"
+        subgraph "Frontend"
+            WEB[Web Portal<br/>React]
+            MOB[Mobile App<br/>Flutter]
+            PORTAL[Dev Portal<br/>React]
+        end
+        
+        subgraph "API Layer"
+            GW[API Gateway<br/>Kong]
+        end
+        
+        subgraph "Core Services"
+            AUTH[Auth Service<br/>Keycloak]
+            FARM[Farm Management]
+            ANA[Analytics Service]
+            ALERT[Alerting Service]
+            VIDEO[Video Service]
+            ML[ML Service]
+            BILL[Billing Service]
+            TENANT[Tenant Service]
+        end
+        
+        subgraph "Integration Layer"
+            KAFKA[Kafka Cluster]
+            WEBHOOK[Webhook Service]
+        end
+        
+        subgraph "Data Layer"
+            PG[(PostgreSQL<br/>Multi-tenant)]
+            CH[(ClickHouse<br/>Analytics)]
+            S3[(MinIO/S3<br/>Video & Images)]
+            REDIS[(Redis<br/>Cache)]
+        end
+    end
+    
+    subgraph "Edge Layer (опционально)"
+        EDGE[Edge Agent<br/>NVIDIA Jetson]
+        CAM[IP Cameras]
+        IOT[IoT Devices]
+    end
+    
+    CLIENT -->|Browser| WEB
+    CLIENT -->|App| MOB
+    CLIENT -->|Integration| GW
+    OPERATORS -->|Browser| WEB
+    OPERATORS -->|App| MOB
+    
+    WEB --> GW
+    MOB --> GW
+    PORTAL --> GW
+    
+    GW --> AUTH
+    GW --> FARM
+    GW --> ANA
+    GW --> ALERT
+    GW --> VIDEO
+    GW --> ML
+    GW --> BILL
+    GW --> TENANT
+    
+    FARM --> PG
+    FARM --> REDIS
+    ANA --> CH
+    ANA --> REDIS
+    ALERT --> PG
+    ALERT --> REDIS
+    VIDEO --> S3
+    VIDEO --> PG
+    ML --> CH
+    ML --> PG
+    BILL --> PG
+    TENANT --> PG
+    
+    FARM --> KAFKA
+    ALERT --> KAFKA
+    VIDEO --> KAFKA
+    
+    KAFKA --> WEBHOOK
+    WEBHOOK -->|Webhook| EXTERNAL
+    
+    EDGE -->|MQTT| KAFKA
+    EDGE -->|Video| VIDEO
+    EDGE -->|Commands| IOT
+    CAM -->|RTSP| EDGE
+    IOT -->|Telemetry| EDGE
+    
+    CLIENT -->|Payment| PAYMENT
+    PAYMENT -->|Webhook| BILL
+    
+    EXTERNAL -->|REST API| GW
+    EXTERNAL -->|ODBC| CH

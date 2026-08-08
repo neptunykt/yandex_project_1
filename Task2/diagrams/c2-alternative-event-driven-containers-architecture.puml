@@ -1,0 +1,116 @@
+@startuml c2_farm_hybrid_event_driven
+!include C4_Container.puml
+
+title Контейнерная диаграмма C2 - Вариант 1: Событийно-ориентированная архитектура
+
+' --- Пользователи ---
+Person(worker, "Дежурный на ферме", "Получает локальные оповещения")
+Person(vet, "Ветеринар", "Мониторит алерты")
+Person(manager, "Руководитель", "Анализирует отчеты")
+Person(mobile, "Мобильный оператор", "Получает push-уведомления")
+
+' --- Edge Layer ---
+System_Boundary(edge, "Edge Layer - Свиноводческая ферма") {
+    
+    Container(cam_connector, "Camera Connector", "Python", "Подключение к IP-камерам по RTSP/ONVIF")
+    Container(device_connector, "Device Connector", "Rust", "Подключение к кормушкам и датчикам по Modbus/MQTT")
+    
+    Container(vas, "Video Analytics Service", "Python + TensorRT", "Локальная видеоаналитика")
+    Container(ems, "Edge Management Service", "Rust", "Управление периферией")
+    Container(ctrl, "Local Controller", "Rust", "Контроль кормушек и поилок")
+    
+    ContainerDb(timescale, "TimescaleDB", "База данных", "Хранение метаданных и метрик")
+    ContainerDb(redis_edge, "Redis Edge Cache", "Кэш", "Локальное кэширование")
+    Container(local_storage, "Local Storage", "Файловое хранилище", "Архив видеофрагментов")
+    
+    Container(edge_broker, "Edge MQTT Broker", "EMQX", "Локальный брокер сообщений")
+    Container(sync_agent, "Sync Agent", "Rust", "Синхронизация с облаком")
+    Container(ws_server, "WebSocket Server", "Python", "Локальные оповещения")
+}
+
+' --- Cloud Layer ---
+System_Boundary(cloud, "Cloud Layer - Головной офис") {
+    
+    Container(gw, "API Gateway", "Kong", "Маршрутизация, аутентификация, rate limiting")
+    Container(auth, "Keycloak", "OAuth2/OIDC", "Аутентификация и авторизация")
+    
+    Container(cloud_broker, "Cloud Message Broker", "RabbitMQ", "Асинхронная коммуникация между сервисами")
+    
+    Container(agg, "Aggregation Service", "FastAPI", "Агрегация данных с ферм")
+    Container(analytics, "Analytics Service", "FastAPI + Airflow", "Аналитика и ML")
+    Container(alerting, "Alerting Service", "FastAPI", "Обработка и отправка оповещений")
+    Container(users, "User Management", "FastAPI", "Управление пользователями")
+    Container(reporting, "Reporting Service", "FastAPI", "Формирование отчетов")
+    
+    ContainerDb(clickhouse, "ClickHouse", "Колоночная БД", "Долгосрочное хранение данных (5+ лет)")
+    ContainerDb(postgres, "PostgreSQL", "Реляционная БД", "Пользователи, фермы, конфигурации")
+    ContainerDb(minio, "MinIO/S3", "Объектное хранилище", "Архив видео и изображений")
+    ContainerDb(redis_cloud, "Redis Cloud Cache", "Кэш", "Кэширование данных")
+}
+
+' --- Клиенты ---
+Container(web, "React Web App", "React", "Веб-портал")
+Container(mobile, "Flutter Mobile App", "Flutter", "Мобильное приложение")
+System_Ext(erp, "ERP/BI Systems", "Интеграция с внешними системами")
+
+' --- Связи Edge ---
+Rel(cam_connector, vas, "Видеопоток", "RTSP/ONVIF")
+Rel(device_connector, ctrl, "Команды управления", "Modbus/MQTT")
+Rel(device_connector, edge_broker, "Телеметрия", "MQTT")
+
+Rel(vas, edge_broker, "События детекции", "MQTT")
+Rel(vas, local_storage, "Видеофрагменты", "Файловая система")
+Rel(vas, timescale, "Логи и метрики", "SQL")
+
+Rel(edge_broker, ems, "События", "MQTT")
+Rel(edge_broker, ctrl, "Команды", "MQTT")
+
+Rel(ems, ctrl, "Управление", "GRPC")
+Rel(ems, timescale, "Данные", "SQL")
+Rel(ems, redis_edge, "Кэш", "Redis")
+
+Rel(timescale, sync_agent, "Репликация", "SQL")
+Rel(ws_server, edge_broker, "Оповещения", "WebSocket")
+
+' --- Edge -> Cloud ---
+Rel(sync_agent, cloud_broker, "События и метрики", "MQTT/AMQP")
+Rel(sync_agent, minio, "Видеофрагменты", "HTTPS/S3")
+Rel(sync_agent, gw, "Синхронизация", "HTTPS/Protobuf")
+
+' --- Cloud Internal ---
+Rel(gw, auth, "Аутентификация", "OAuth2/OIDC")
+
+Rel(gw, agg, "API запросы", "REST/HTTP")
+Rel(gw, alerting, "API запросы", "REST/HTTP")
+Rel(gw, users, "API запросы", "REST/HTTP")
+Rel(gw, reporting, "API запросы", "REST/HTTP")
+Rel(gw, analytics, "API запросы", "REST/HTTP")
+
+Rel(cloud_broker, agg, "Потоки данных", "AMQP")
+Rel(cloud_broker, alerting, "События", "AMQP")
+Rel(cloud_broker, analytics, "Метрики", "AMQP")
+
+Rel(agg, clickhouse, "Запись", "SQL")
+Rel(analytics, clickhouse, "Чтение", "SQL")
+Rel(alerting, clickhouse, "История алертов", "SQL")
+Rel(reporting, clickhouse, "Отчеты", "SQL")
+Rel(users, postgres, "CRUD", "SQL")
+Rel(alerting, postgres, "Конфигурации", "SQL")
+Rel(agg, redis_cloud, "Кэш", "Redis")
+Rel(analytics, redis_cloud, "Кэш", "Redis")
+
+' --- Cloud -> Edge ---
+Rel(cloud_broker, sync_agent, "Обновления моделей и команд", "MQTT/AMQP")
+
+' --- Клиенты ---
+Rel(web, gw, "Запросы", "HTTPS")
+Rel(mobile, gw, "Запросы", "HTTPS")
+Rel(alerting, web, "WebSocket уведомления", "WebSocket")
+Rel(alerting, mobile, "Push уведомления", "FCM/APNS")
+
+' --- Внешние системы ---
+Rel(erp, gw, "REST API", "HTTPS")
+Rel(erp, clickhouse, "ODBC/JDBC", "ODBC")
+
+SHOW_LEGEND()
+@enduml

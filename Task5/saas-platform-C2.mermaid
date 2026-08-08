@@ -1,0 +1,132 @@
+graph TB
+    subgraph "User Layer"
+        CLIENT[Клиент<br/>AgroHolding]
+        OP[Оператор фермы]
+    end
+    
+    subgraph "Presentation Layer"
+        WEB[Web App<br/>React + TypeScript]
+        MOB[Mobile App<br/>Flutter]
+    end
+    
+    subgraph "Gateway Layer"
+        GW[API Gateway<br/>Kong/Nginx]
+        LB[Load Balancer<br/>HAProxy]
+    end
+    
+    subgraph "Service Layer"
+        subgraph "Core Services"
+            FA[Farm Service<br/>FastAPI]
+            EV[Event Service<br/>FastAPI]
+            AL[Alert Service<br/>FastAPI]
+            DE[Device Service<br/>FastAPI]
+        end
+        
+        subgraph "Analytics Services"
+            ME[Metrics Service<br/>FastAPI]
+            RE[Report Service<br/>FastAPI]
+            PR[Prediction Service<br/>FastAPI + ML]
+        end
+        
+        subgraph "Management Services"
+            AU[Auth Service<br/>Keycloak]
+            TE[Tenant Service<br/>FastAPI]
+            BI[Billing Service<br/>FastAPI]
+            NO[Notification Service<br/>FastAPI]
+        end
+        
+        subgraph "Integration Services"
+            WH[Webhook Service<br/>FastAPI]
+            SY[Sync Service<br/>FastAPI]
+        end
+    end
+    
+    subgraph "Data Layer"
+        subgraph "Tenant Databases"
+            PG1[(Tenant A DB<br/>PostgreSQL)]
+            PG2[(Tenant B DB<br/>PostgreSQL)]
+            PGN[(Tenant N DB<br/>PostgreSQL)]
+        end
+        
+        subgraph "Shared Databases"
+            CH[(ClickHouse<br/>Analytics)]
+            S3[(MinIO/S3<br/>Files)]
+            RD[(Redis<br/>Cache)]
+            AUTHDB[(Auth DB<br/>PostgreSQL)]
+        end
+        
+        subgraph "Message Queue"
+            KF[Kafka Cluster<br/>Events]
+        end
+    end
+    
+    subgraph "Edge Layer"
+        EDGE[Edge Agent<br/>Rust/Python]
+        CAM[Cameras]
+        IOT[IoT Devices]
+    end
+    
+    CLIENT -->|Browser| WEB
+    CLIENT -->|App| MOB
+    OP -->|Browser| WEB
+    OP -->|App| MOB
+    
+    WEB --> LB
+    MOB --> LB
+    LB --> GW
+    
+    GW -->|Auth| AU
+    GW -->|Farm Management| FA
+    GW -->|Events| EV
+    GW -->|Alerts| AL
+    GW -->|Devices| DE
+    GW -->|Metrics| ME
+    GW -->|Reports| RE
+    GW -->|Predictions| PR
+    GW -->|Tenant| TE
+    GW -->|Billing| BI
+    GW -->|Notifications| NO
+    GW -->|Webhooks| WH
+    GW -->|Sync| SY
+    
+    AU --> AUTHDB
+    TE --> PG1
+    TE --> PG2
+    TE --> PGN
+    FA --> PG1
+    FA --> PG2
+    FA --> PGN
+    EV --> PG1
+    EV --> PG2
+    EV --> PGN
+    AL --> PG1
+    AL --> PG2
+    AL --> PGN
+    DE --> PG1
+    DE --> PG2
+    DE --> PGN
+    
+    FA --> RD
+    EV --> RD
+    AL --> RD
+    
+    EV --> KF
+    AL --> KF
+    DE --> KF
+    ME --> KF
+    
+    ME --> CH
+    RE --> CH
+    PR --> CH
+    
+    BI --> PG1
+    BI --> PG2
+    BI --> PGN
+    
+    SY --> KF
+    WH --> KF
+    
+    EDGE -->|MQTT| KF
+    EDGE -->|RTSP| EV
+    CAM -->|Video| EDGE
+    IOT -->|Telemetry| EDGE

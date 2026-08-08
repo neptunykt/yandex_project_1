@@ -1,0 +1,123 @@
+graph TB
+    subgraph "Ферма"
+        CAM["IP Камеры
+        RTSP"]
+        FEED["Кормушки/Поилки
+        Modbus/MQTT"]
+        SENS["Датчики
+        Фильтрация/Корм"]
+        EDGE["Edge-Агент
+        Python"]
+    end
+
+    subgraph "Облачная платформа"
+        subgraph "API Gateway"
+            GW["API Gateway
+            Kong/Nginx"]
+        end
+
+        subgraph "Сервис Видеоаналитики"
+            VS["Video Stream Service
+            FastAPI"]
+            AI["Нейросеть
+            PyTorch/TensorRT"]
+            EVT["Event Detector"]
+        end
+
+        subgraph "Бизнес-сервисы"
+            FMS["Farm Management Service
+            FastAPI"]
+            ALC["Alerting Service
+            FastAPI"]
+            CTR["Control Service
+            FastAPI"]
+            SYNC["Sync Service
+            FastAPI"]
+            MET["Metrics Service
+            FastAPI"]
+        end
+
+        subgraph "Брокер сообщений"
+            MQ["RabbitMQ Cluster
+            или Redis Pub/Sub"]
+        end
+        subgraph "Базы данных"
+            PGS[("PostgreSQL
+            Данные ферм")]
+            S3[("MinIO/S3
+            Видео и изображения")]
+            CACHE[("Redis Cache
+            Сессии и кэш")]
+        end
+
+        subgraph "Аутентификация"
+            AUTH["Keycloak
+            OAuth2/OIDC"]
+        end
+    end
+
+    subgraph "Clients"
+        WEB["React Web App"]
+        MOB["Flutter Mobile App"]
+        EXT["Внешние системы
+        ERP/BI"]
+    end
+
+    CAM -->|RTSP поток| EDGE
+    FEED -->|Telemetry| EDGE
+    SENS -->|Telemetry| EDGE
+    EDGE -->|MQTT/WebSocket| GW
+    EDGE -->|Команды| FEED
+
+    GW -->|Аутентификация| AUTH
+    GW -->|/api/v1/video| VS
+    GW -->|/api/v1/farm| FMS
+    GW -->|/api/v1/alerts| ALC
+    GW -->|/api/v1/control| CTR
+    GW -->|/api/v1/sync| SYNC
+    GW -->|/api/v1/metrics| MET
+
+    VS -->|Анализ кадров| AI
+    AI -->|Детекция| EVT
+    EVT -->|События| MQ
+
+    FMS -->|CRUD| PGS
+    ALC -->|Уведомления| MQ
+    ALC -->|Push/SMS/Email| WEB
+    CTR -->|Команды| MQ
+    SYNC -->|Синхронизация| PGS
+    MET -->|Агрегация| PGS
+    MET -->|Кэш| CACHE
+
+    ALC -->|Хранение логов| PGS
+    VS -->|Хранение видео| S3
+
+    MQ -->|События| ALC
+    MQ -->|"Команды через GW"| GW
+    MQ -->|Метрики| MET
+
+    AUTH -->|JWT| WEB
+    AUTH -->|JWT| MOB
+    GW -->|REST API| EXT
+
+    style CAM fill:#f9f,stroke:#333,stroke-width:2px
+    style FEED fill:#f9f,stroke:#333,stroke-width:2px
+    style SENS fill:#f9f,stroke:#333,stroke-width:2px
+    style EDGE fill:#f9f,stroke:#333,stroke-width:2px
+    style GW fill:#bbf,stroke:#333,stroke-width:2px
+    style VS fill:#bbf,stroke:#333,stroke-width:2px
+    style AI fill:#bbf,stroke:#333,stroke-width:2px
+    style EVT fill:#bbf,stroke:#333,stroke-width:2px
+    style FMS fill:#bbf,stroke:#333,stroke-width:2px
+    style ALC fill:#bbf,stroke:#333,stroke-width:2px
+    style CTR fill:#bbf,stroke:#333,stroke-width:2px
+    style SYNC fill:#bbf,stroke:#333,stroke-width:2px
+    style MET fill:#bbf,stroke:#333,stroke-width:2px
+    style MQ fill:#f96,stroke:#333,stroke-width:2px
+    style PGS fill:#9f9,stroke:#333,stroke-width:2px
+    style S3 fill:#9f9,stroke:#333,stroke-width:2px
+    style CACHE fill:#9f9,stroke:#333,stroke-width:2px
+    style AUTH fill:#fc9,stroke:#333,stroke-width:2px
+    style WEB fill:#cf9,stroke:#333,stroke-width:2px
+    style MOB fill:#cf9,stroke:#333,stroke-width:2px
+    style EXT fill:#cf9,stroke:#333,stroke-width:2px
