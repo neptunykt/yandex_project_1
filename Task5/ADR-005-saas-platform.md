@@ -307,6 +307,156 @@ graph TB
     
 ```
 ---
+#### 2.4. Детальная реализация изоляции для общих сервисов (ClickHouse, S3, Kafka)
+
+Хотя в качестве основного подхода для транзакционных данных выбран **Database-per-tenant** в PostgreSQL, инфраструктура платформы включает в себя **общие кластеры** (ClickHouse, Kafka, S3) для обеспечения экономической эффективности и масштабируемости. В этих сервисах изоляция не может быть обеспечена только маршрутизацией на уровне подключения (как в PostgreSQL), а должна быть реализована на уровне **данных (Data)** и **доступа (Access)**.
+
+Ниже зафиксированы архитектурные паттерны и политики для каждого общего хранилища.
+
+---
+
+##### 2.4.1. ClickHouse (Аналитическое хранилище)
+
+**Цель:** Гарантировать, что аналитические запросы Tenant'а A не пересекаются с данными Tenant'а B, даже при использовании одного кластера.
+
+**Стратегия изоляции:** `database-per-tenant` в рамках одного кластера ClickHouse.
+
+| Элемент | Реализация |
+|---------|------------|
+| **Структура БД** | При онбординге Tenant'а автоматически создается БД `tenant_{tenant_id}` |
+| **Таблицы** | Внутри БД создаются все аналитические таблицы (`events`, `metrics`, `alerts`) |
+| **Учетная запись** | Для каждого Tenant'а создается пользователь `user_{tenant_id}` |
+| **Права доступа** | `GRANT ALL ON tenant_{tenant_id}.* TO user_{tenant_id}` |
+| **Запрещено** | Выдавать права на системные таблицы (`system.*`) или БД других Tenant'ов |
+
+**Маршрутизация в коде:** Сервисный слой (Analytics Service) при подключении к ClickHouse динамически подставляет имя БД в запросы:
+
+```sql
+-- Пример: создание Tenant в ClickHouse
+CREATE DATABASE IF NOT EXISTS tenant_abc123;
+CREATE USER IF NOT EXISTS user_abc123 IDENTIFIED BY 'strong_password';
+GRANT ALL ON tenant_abc123.* TO user_abc123;
+REVOKE ALL ON *.* FROM user_abc123;  -- Явный запрет на доступ к чужим БД
+```
+-- Пример запроса из кода
+SELECT * FROM tenant_{tenant_id}.events WHERE date = today();
+
+##### 2.4.2. S3 / MinIO (Объектное хранилище для видео и изображений)
+
+**Цель:** Обеспечить физическую изоляцию файлов (видео, снимки, ML-модели) и предотвратить перебор бакетов/ключей (Directory Traversal).
+
+**Стратегия изоляции:** `bucket-per-tenant` с жесткими политиками IAM (Identity and Access Management).
+
+| Элемент | Реализация |
+|:---|:---|
+| **Структура** | При создании Tenant'а создается бакет `platform-tenant-{tenant_id}` |
+| **Внутренняя структура** | Префиксы (папки): `videos/`, `images/`, `ml-models/` |
+| **Политика доступа** | IAM-политика разрешает доступ **только** к своему бакету |
+| **Выдача файлов** | Короткоживущие (1-5 мин) presigned URLs |
+| **Запрещено** | Публичные бакеты, `ListAllMyBuckets` для сервисных аккаунтов |
+
+**Схема организации данных в S3:**'
+
+**Структура бакета в S3:**
+
+| Путь | Тип | Описание |
+|:---|:---|:---|
+| `platform-tenant-abc123/` | Бакет | Корень Tenant'а |
+| `├── videos/` | Папка | Все видеозаписи |
+| `│   ├── 2026-08-08/` | Папка | Видео за 08.08.2026 |
+| `│   │   ├── cam-01_14-30-25.mp4` | Файл | Камера 1, 14:30:25 |
+| `│   │   └── cam-02_14-35-12.mp4` | Файл | Камера 2, 14:35:12 |
+| `│   └── 2026-08-07/` | Папка | Видео за 07.08.2026 |
+| `│       └── cam-01_10-15-00.mp4` | Файл | Камера 1, 10:15:00 |
+| `├── images/` | Папка | Снимки с камер |
+| `│   ├── 2026-08-08/` | Папка | Снимки за 08.08.2026 |
+| `│   │   ├── cam-01_14-30-25.jpg` | Файл | Камера 1, 14:30:25 |
+| `│   │   └── cam-02_14-35-12.jpg` | Файл | Камера 2, 14:35:12 |
+| `│   └── 2026-08-07/` | Папка | Снимки за 07.08.2026 |
+| `│       └── cam-01_10-15-00.jpg` | Файл | Камера 1, 10:15:00 |
+| `└── ml-models/` | Папка | ML-модели (Premium) |
+| `    ├── weight-estimation-v2.onnx` | Файл | Модель оценки веса v2 |
+| `    └── health-detection-v1.onnx` | Файл | Модель детекции здоровья v1 |
+
+Пример Bucket Policy:
+
+``` json
+{
+   "Version": "2012-10-17",
+      "Statement": [
+         {
+            "Effect": "Allow",
+            "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
+            "Resource": ["arn:aws:s3:::platform-tenant-abc123/*"]
+         },
+         {
+            "Effect": "Deny",
+            "Action": ["s3:*"],
+            "Resource": ["arn:aws:s3:::platform-tenant-*", "arn:aws:s3:::platform-tenant-*/*"],
+            "Condition": {
+                  "StringNotEquals": {"s3:prefix": ["platform-tenant-abc123", "platform-tenant-abc123/*"]}
+            }
+         }
+      ]
+}
+```     
+
+##### 2.4.3. Apache Kafka (Потоковая передача данных / Event Bus)
+
+**Цель:** Предотвратить "перекрестное загрязнение" (Cross-Tenant Data Leak) в очереди сообщений, когда Consumer одного Tenant'а может прочитать сообщения другого.
+
+**Стратегия изоляции:** `topic-per-tenant` с обязательной авторизацией на уровне ACL.
+
+| Элемент | Реализация |
+|:---|:---|
+| **Структура топиков** | `{tenant_id}.{service}.{type}` (пример: `abc123.events.raw`) |
+| **Учетная запись** | Для каждого Tenant'а создается Service Account `tenant_{tenant_id}` |
+| **Права доступа** | ACL на префикс: разрешены только топики с `{tenant_id}.` |
+| **Consumer Groups** | Имя группы включает `tenant_id`: `consumer_{tenant_id}_analytics` |
+| **Доп. контроль** | Kafka Interceptor в коде добавляет заголовок `X-Tenant-ID` в каждое сообщение |
+
+**Схема организации топиков в Kafka:**
+
+## Топики Tenant'а abc123
+abc123.events.raw # Сырые события с Edge-агентов  
+abc123.events.processed # Обработанные события  
+abc123.alerts.critical # Критические оповещения  
+abc123.alerts.warning # Предупреждения  
+abc123.metrics.5min # Агрегированные метрики (5 мин)  
+abc123.video.indexed # Индексы видео (для поиска)  
+abc123.ml.predictions # ML-прогнозы  
+
+## Топики Tenant'а def456
+def456.events.raw # Сырые события для другого клиента  
+def456.alerts.critical # Оповещения другого клиента  
+def456.metrics.5min # Метрики другого клиента  
+
+**Пример ACL политики (Kafka) — корректный синтаксис:**
+
+Для Kafka ACL используется следующий синтаксис (каждое правило — отдельная команда):
+
+```bash
+# Разрешить запись в топики, начинающиеся с 'abc123.'
+kafka-acls.sh --authorizer-properties zookeeper.connect=localhost:2181 \
+    --add --allow-principal User:tenant_abc123 \
+    --operation Write --topic abc123.*
+
+# Разрешить чтение из топиков, начинающихся с 'abc123.'
+kafka-acls.sh --authorizer-properties zookeeper.connect=localhost:2181 \
+    --add --allow-principal User:tenant_abc123 \
+    --operation Read --topic abc123.*
+
+# Разрешить чтение consumer групп для этого Tenant'а
+kafka-acls.sh --authorizer-properties zookeeper.connect=localhost:2181 \
+    --add --allow-principal User:tenant_abc123 \
+    --operation Read --group consumer_abc123_*
+
+# Запретить всё остальное (Deny All) — явный запрет как страховка
+kafka-acls.sh --authorizer-properties zookeeper.connect=localhost:2181 \
+    --add --deny-principal User:tenant_abc123 \
+    --operation All --topic * --allow-host *
+```    
+---
 
 ## 3. Задача 2: Разработка системы биллинга и монетизации
 
